@@ -1117,14 +1117,10 @@ function main(args) {
             source:      "src",
             binbak:      new Conditional("bak"),
             vbaproj:     false,
-            incQuery:    false,
+            incQuery:    true,
             dbCompact:   false
         })
         .parse(args);
-    
-    // It's guard for internal impl. If necessary, you can comment out to enable this feature.
-    param.binbak.flag = false;
-    param.incQuery = false;    
     
     var h = new CommandHelper(param);
     h.runCommand();
