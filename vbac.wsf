@@ -5,7 +5,8 @@ The vbac is not VBA compiler.
 Instead, this unsophisticated script frees VBA code from binary files.
 This script is distributed as part of the Ariawase library.
 
-The Project Page: https://github.com/vbaidiot/Ariawase
+The Project Page: https://bm-sms.visualstudio.com/_git/Ariawasms
+The Original Project Page: https://github.com/vbaidiot/Ariawase
 </comment>
 <job id="">
 <?job error="true" debug="false" ?>
@@ -22,6 +23,7 @@ Commands:
   combine           Import all VBComponents
   decombine         Export all VBComponents
   clear             Remove all VBComponents
+  acdoc             Show all document names
   help              Display this help message
 
 Options:
@@ -792,12 +794,9 @@ Access.prototype.getAcDocs = function(acApp) {
     try {
         acDb = acApp.CurrentDB();
         var docs = new Array();
-        var conts = ['Modules', 'Forms', 'Reports', 'Scripts'];
-        var c2eTable = this.containerExtensionTable;
-        for (var i = 0; i < conts.length; i++) {
-            var cont = conts[i];
-            foreachEnum(acDb.Containers(cont).Documents, function(doc) {
-                docs.push({ container: cont, name: doc.Name });
+        for (var i = 0; i < acDb.Containers.Count; i++) {
+            foreachEnum(acDb.Containers(i).Documents, function(doc) {
+                docs.push({ container: acDb.Containers(i).Name, name: doc.Name });
             });
         }
     } finally { if (acDb != null) acDb.Close(); }
@@ -1125,7 +1124,7 @@ function main(args) {
     
     // It's guard for internal impl. If necessary, you can comment out to enable this feature.
     param.binbak.flag = false;
-    param.incQuery = false;
+    param.incQuery = false;    
     
     var h = new CommandHelper(param);
     h.runCommand();
