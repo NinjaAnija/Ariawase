@@ -24,6 +24,7 @@ Commands:
   decombine         Export all VBComponents
   clear             Remove all VBComponents
   acdoc             Show all document names
+  acdbdef           Export Access tables definitions
   help              Display this help message
 
 Options:
@@ -215,16 +216,18 @@ CmdParam.prototype.parse = function(args) {
     return this.parameters;
 };
 
-var Config = function(binary, source, binbak) {
+var Config = function(binary, source, binbak, docs) {
     var root = fso.GetParentFolderName(scriptPath);
     this.bin = (isPathRooted(binary)) ? binary : fso.BuildPath(root, binary);
     this.src = (isPathRooted(source)) ? source : fso.BuildPath(root, source);
     this.bak = (!binbak.flag) ? undefined
              : (isPathRooted(binbak.value)) ? binbak.value
              : fso.BuildPath(root, binbak.value);
+    this.docs = (isPathRooted(docs)) ? docs : fso.BuildPath(root, docs);
 };
 Config.prototype.getBins = function() { return fso.GetFolder(this.bin).Files; };
 Config.prototype.getSrcs = function() { return fso.GetFolder(this.src).SubFolders; };
+Config.prototype.getDocs = function() { return fso.GetFolder(this.docs).Files; };
 
 var VBAProjFile = function(vbproj, srcdir) {
     this.vbproj   = vbproj;
@@ -789,6 +792,103 @@ Access.prototype.iterAllObjects = function(acApp, action) {
         if (!!action(objs[i], i)) break;
     }
 };
+Access.prototype.getAcDbDefs = function(acApp, conf) {
+    var convertFieldType = function(type) {
+        if (type === 10)  { return "TEXT"; }
+        if (type === 109) { return "TEXT"; }
+        if (type === 10)  { return "CHAR"; }
+        if (type === 12)  { return "MEMO"; }
+        if (type === 2)   { return "BYTE"; }
+        if (type === 102) { return "BYTE"; }
+        if (type === 3)   { return "SHORT"; }
+        if (type === 103) { return "SHORT"; }
+        if (type === 4)   { return "LONG"; }
+        if (type === 104) { return "LONG"; }
+        if (type === 6)   { return "SINGLE"; }
+        if (type === 105) { return "SINGLE"; }
+        if (type === 7)   { return "DOUBLE"; }
+        if (type === 106) { return "DOUBLE"; }
+        if (type === 15)  { return "GUID"; }
+        if (type === 107) { return "GUID"; }
+        if (type === 20)  { return "DECIMAL"; }
+        if (type === 108) { return "DECIMAL"; }
+        if (type === 8)   { return "DATETIME"; }
+        if (type === 5)   { return "CURRENCY"; }
+        if (type === 4)   { return "COUNTER"; }
+        if (type === 1)   { return "YESNO"; }
+        if (type === 11)  { return "LONGBINARY"; }
+        if (type === 12)  { return "LONGBINARY"; }
+        if (type === 101) { return "LONGBINARY"; }
+        if (type === 9)   { return "BINARY"; }
+        return "UNKNOWN";
+    };
+    var list = new Array();
+    foreachEnum(acApp.CurrentDB().TableDefs, function(tblDef) {
+        if (tblDef.Name.indexOf("MSys") !== 0) {
+            var table = {
+                name: tblDef.Name,
+                link_table: tblDef.SourceTableName !== "",
+                columns: new Array(),
+                indexes: new Array()
+            };
+            foreachEnum(tblDef.Fields, function(field) {
+                var column = {
+                    name: field.Name,
+                    type: convertFieldType(field.Type),
+                    required: field.Required,
+                    allow_zero_length: field.AllowZeroLength
+                };
+                table.columns.push(column);
+            });
+            foreachEnum(tblDef.Indexes, function(index) {
+                var oneIndex = {
+                    name: index.Name,
+                    primary_key: index.Primary,
+                    unique: index.Unique,
+                    foreign_key: index.Foreign,
+                    columns: new Array()
+                };
+                foreachEnum(index.Fields, function(indexField) {
+                    oneIndex.columns.push(indexField.Name);
+                });
+                table.indexes.push(oneIndex);
+            });
+            list.push(table);
+        }
+    });
+
+    if (!fso.FolderExists(conf.docs)) fso.CreateFolder(conf.docs);
+
+    var yml = fso.OpenTextFile(conf.docs + "\\access_database.yml", 2, true);
+    foreachEnum(list, function(x) {
+        yml.WriteLine(x.name + ":");
+        yml.WriteLine("  name: " + x.name);
+        yml.WriteLine("  link_table: " + x.link_table);
+        yml.WriteLine("  columns:");
+            foreachEnum(x.columns, function(column) {
+        yml.WriteLine("  - name: " + column.name);
+        yml.WriteLine("    type: " + column.type);
+        yml.WriteLine("    required: " + column.required);
+        yml.WriteLine("    allow_zero_length: " + column.allow_zero_length);
+            });
+        yml.WriteLine("  indexes:");
+            foreachEnum(x.indexes, function(index) {
+        yml.WriteLine("  - name: " + index.name);
+                if (index.primary_key) {
+        yml.WriteLine("    primary_key: true,");
+                }
+                if (index.foreign_key) {
+        yml.WriteLine("    foreign_key: true,");
+                }
+        yml.WriteLine("    unique: " + index.unique);
+        yml.WriteLine("    columns:");
+                foreachEnum(index.columns, function(indexColumn) {
+        yml.WriteLine("    - name: " + indexColumn);
+                });
+        });
+    });
+    yml.Close();
+}
 Access.prototype.getAcDocs = function(acApp) {
     var acDb;
     try {
@@ -1015,10 +1115,29 @@ Command.prototype.acdoc = function() {
             println();
         });
 };
+Command.prototype.acdbdef = function() {
+    var hlp  = this.__helper;
+    var conf = hlp.config;
+    
+    hlp.iterTarget(
+        function() { return conf.getBins(); },
+        function(path) {
+            if (hlp.getAppName(path) != 'Access') return false;
+            
+            println("> Target: " + fso.GetFileName(path));
+            var docs;
+            var acc = hlp.createOffice(path);
+            acc.loanOfAcProj(path, true, function(acProj) {
+                var acApp = acProj.Application;
+                docs = acc.getAcDbDefs(acApp, conf);
+            });
+            println();
+        });
+};
 
 var CommandHelper = function(param) {
     this.parameter = param;
-    this.config  = new Config(param.binary, param.source, param.binbak);
+    this.config  = new Config(param.binary, param.source, param.binbak, param.docs);
     this.command = new Command(this);
 };
 CommandHelper.prototype.getAppName = function(fname) {
@@ -1116,6 +1235,7 @@ function main(args) {
             binary:      "bin",
             source:      "src",
             binbak:      new Conditional("bak"),
+            docs:        "docs",
             vbaproj:     false,
             incQuery:    true,
             dbCompact:   false

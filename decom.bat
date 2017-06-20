@@ -6,6 +6,7 @@ for /f "usebackq delims=" %%x in (`git remote -v ^| findstr ^^origin ^| findstr 
 set test=P:\54_BPR\31_Snapshot\%test:~44,-8%
 
 cscript //nologo vbac.wsf decombine
+cscript //nologo vbac.wsf acdbdef
 
 set /a backup=3
 
